@@ -1,0 +1,16 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="17.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <ClCompile Include="C:\Users\axelg\Documents\A-Document\Projet_perso\Wave_Sim\src\main.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <CustomBuild Include="C:\Users\axelg\Documents\A-Document\Projet_perso\Wave_Sim\CMakeLists.txt" />
+  </ItemGroup>
+  <ItemGroup>
+    <Filter Include="Source Files">
+      <UniqueIdentifier>{D50E603C-E27E-3024-AD16-F389FF9D2742}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+</Project>
