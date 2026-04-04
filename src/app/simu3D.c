@@ -223,13 +223,17 @@ int main(){
             M3D_apply_input_state(&engine.camera, &input, delta_seconds);
 
             simulation_start = SDL_GetPerformanceCounter();
+            if(!pause){
 #if OPTI_SELECTED == 1
-            buffer = calculate_buffer_SIMD(t, RESOLUTION_HEIGHT, RESOLUTION_WIDTH);
+                  buffer = calculate_buffer_SIMD(t, RESOLUTION_HEIGHT, RESOLUTION_WIDTH);
 #else
-            buffer = calculate_buffer(t, RESOLUTION_HEIGHT, RESOLUTION_WIDTH);
+                  buffer = calculate_buffer(t, RESOLUTION_HEIGHT, RESOLUTION_WIDTH);
 #endif
-            update_vector(t, LIFE_TIME);
-            rand_wave(t, FREQUENCY, nb_par_second);
+            
+                  update_vector(t, LIFE_TIME);
+                  rand_wave(t, FREQUENCY, nb_par_second);
+                  t += dt;
+            }
             simulation_end = SDL_GetPerformanceCounter();
 
             render_start = SDL_GetPerformanceCounter();
@@ -241,7 +245,7 @@ int main(){
             }else{
                   draw_wave_triangles(&engine, buffer, WAVE_RENDER_STEP);
             }
-            t += dt;
+            
 
             snprintf(
                   data,
