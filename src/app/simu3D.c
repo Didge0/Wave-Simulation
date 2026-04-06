@@ -92,6 +92,38 @@ static void on_menu_fullscreen_change(Menu_Item* item, void* user_data){
       M3D_set_Fullscreen((M3D_Engine*)user_data, (*(bool*)item->value_ptr) ? 1 : 0);
 }
 
+static bool apply_simulation_resize(unsigned int new_width, unsigned int new_height){
+      if(!resize_wave_simulation((int)new_width, (int)new_height)){
+            return false;
+      }
+
+      width = (int)new_width;
+      height = (int)new_height;
+      return true;
+}
+
+static bool is_simulation_resize_key(SDL_Keycode key){
+      return key == SDLK_LEFT || key == SDLK_RIGHT || key == SDLK_KP_PLUS || key == SDLK_KP_MINUS;
+}
+
+static bool is_simulation_size_item(const Menu_Item* item){
+      if(item == NULL || item->label == NULL){
+            return false;
+      }
+
+      return strcmp(item->label, "Sim width") == 0 || strcmp(item->label, "Sim height") == 0;
+}
+
+static void apply_pending_simulation_resize(Menu_Params* params, unsigned int wave_simulation_width, unsigned int wave_simulation_height, bool* pending_resize){
+      if(params == NULL || pending_resize == NULL || !(*pending_resize)){
+            return;
+      }
+
+      if(apply_simulation_resize(wave_simulation_width, wave_simulation_height)){
+            *pending_resize = false;
+      }
+}
+
 static void update_overlay_rect(SDL_Window* window, SDL_FRect* rect, int* window_pixel_width){
       int current_width = WIDTH;
       int current_height = HEIGHT;
@@ -277,13 +309,19 @@ int main(){
       Optimization_Mode optimization_selected = OPTI_SIMD;
       float limit_time_wave_simulation = 4.0f;
       unsigned int resolution_daffichage = 5u;
+      unsigned int wave_simulation_width = WIDTH;
+      unsigned int wave_simulation_height = HEIGHT;
+      bool pending_simulation_resize = false;
 
       Menu_Params params;
       menu_init(&params);
       menu_add_bool(&params, "Fullscreen", &is_fullscreen, on_menu_fullscreen_change, &engine);
+      menu_add_bool(&params, "Pause", &pause, NULL, NULL);
+      menu_add_uint(&params, "Sim width", &wave_simulation_width, 1, 10000, 10, NULL, NULL);
+      menu_add_uint(&params, "Sim height", &wave_simulation_height, 1, 10000, 10, NULL, NULL);
       menu_add_float(&params, "Sim Speed", &simulation_speed, SIMULATION_SPEED_MIN, SIMULATION_SPEED_MAX, 0.25f, NULL, NULL);
+      menu_add_float(&params, "Limit Time", &limit_time_wave_simulation, 1.0f, 100.0f, 1.0f, NULL, NULL);
       menu_add_int(&params, "Drawing Res", (int*)&resolution_daffichage, 1, 20, 1, NULL, NULL);
-      menu_add_float(&params, "Limit Time", &limit_time_wave_simulation, 0.1f, 100.0f, 1.0f, NULL, NULL);
       menu_add_int(&params, "Simulation Res", (int*)&resolution_simulation, 1, 20, 1, NULL, NULL);
       menu_add_enum(&params, "Optimization", (int*)&optimization_selected, 0, 1, 1, optimization_label_fn, NULL, NULL);
       menu_add_enum(&params, "Drawing Mode", (int*)&drawing_mode, 0, 2, 1, drawing_mode_label_fn, NULL, NULL);
@@ -317,14 +355,24 @@ int main(){
                   }else if(event.type == SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED || event.type == SDL_EVENT_WINDOW_RESIZED){
                         update_overlay_rect(engine.window, &dataRect, &window_pixel_width);
                   }else if( event.type == SDL_EVENT_KEY_DOWN){
+                        if(show_menu && pending_simulation_resize && !is_simulation_resize_key(event.key.key)){
+                              apply_pending_simulation_resize(&params, wave_simulation_width, wave_simulation_height, &pending_simulation_resize);
+                        }
+
                         if(event.key.key == SDLK_P && !event.key.repeat){
                               drawing_mode = (drawing_mode + 1) % 3;
-                        }else if(event.key.key == SDLK_SPACE && !event.key.repeat){
+                        }else if(event.key.key == SDLK_RETURN && !event.key.repeat && !show_menu){
                               pause = !pause;
                         }else if(event.key.key == SDLK_KP_ENTER && !event.key.repeat){
                               show_menu = !show_menu;
                         }
                         if(show_menu){
+                              Menu_Item* selected_item = menu_get_selected(&params);
+
+                              if(is_simulation_size_item(selected_item) && is_simulation_resize_key(event.key.key) && !event.key.repeat){
+                                    pending_simulation_resize = true;
+                              }
+
                               menu_bind_default_key_down(&params, (int)event.key.key, event.key.repeat ? 1 : 0);
                         }
 
@@ -334,10 +382,18 @@ int main(){
                         }
                         M3D_bind_default_key_down_show_mouse(&engine, &input, (int)event.key.key, event.key.repeat ? 1 : 0);
                         if(M3D_bind_default_key_down_quit(&engine, &input, (int)event.key.key, event.key.repeat ? 1 : 0)){
-                              is_opened = false;
+                              if(show_menu){
+                                    show_menu = false;
+                              }else{
+                                    is_opened = false;
+                              }
+                              
                         }
                         
                   }else if(event.type == SDL_EVENT_KEY_UP){
+                        if(show_menu && pending_simulation_resize && is_simulation_resize_key(event.key.key)){
+                              apply_pending_simulation_resize(&params, wave_simulation_width, wave_simulation_height, &pending_simulation_resize);
+                        }
                         M3D_bind_default_key_up(&input, (int)event.key.key);
                   }else if(event.type == SDL_EVENT_MOUSE_MOTION){
                         M3D_bind_default_mouse_motion(&input, (float)event.motion.xrel, (float)event.motion.yrel);

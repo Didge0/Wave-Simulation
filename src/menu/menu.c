@@ -459,7 +459,7 @@ bool menu_bind_default_key_down(Menu_Params* params, SDL_Keycode key, int is_rep
       const size_t current_column = (params != NULL) ? (params->selected_index % max_columns) : 0u;
       const size_t row_count = menu_row_count(params);
 
-      if(params == NULL || is_repeat){
+      if(params == NULL){
             return false;
       }
 

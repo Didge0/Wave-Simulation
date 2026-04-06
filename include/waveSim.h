@@ -9,6 +9,10 @@ typedef struct {
 
 bool init_wave_simulation(int _width, int _height);
 
+bool resize_wave_simulation(int new_width, int new_height);
+bool resize_wave_simulation_width(int new_width);
+bool resize_wave_simulation_height(int new_height);
+
 void end_simulation();
 
 void add_wave(float x_click, float y_click, float t);

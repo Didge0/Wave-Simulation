@@ -36,36 +36,44 @@ static inline float u_r0(float r){
       return expf(-r*r);
 }
 
+static inline void init_data_wave_sim(WaveSim* sim){
+      sim->u_buffer = NULL;
+
+      /***** Initialisation de la map de r pour la première onde *****/
+      sim->r_map_all = malloc(width * 2 * height * 2 * sizeof(float));
+      sim->inv_r_map = malloc(width * 2 * height * 2 * sizeof(float));
+      for(unsigned int x=0; x<width*2; x++){
+            for(unsigned y=0; y<height*2; y++){
+                  float dx = ((float)x - width)/50.0f;
+                  float dy = ((float)y - height)/50.0f;
+                  sim->r_map_all[y*width*2 + x] = sqrtf(dx*dx + dy*dy);
+                  if(sim->r_map_all[y*width*2 + x] < 0.9f)
+                        sim->inv_r_map[y*width*2 + x] = 1;
+                  else
+                        sim->inv_r_map[y*width*2 + x] = 1/sim->r_map_all[y*width*2 + x];
+            }
+      }
+
+      for(unsigned int i=0; i<U_R0_RESOLUTION; i++){
+            sim->u_r0_table[i] = u_r0(R_MAX_PAS*i);
+      }
+
+      /***** Initialisation du buffer  *****/
+      sim->u_buffer = malloc(width * height * sizeof(float));
+      assert(sim->u_buffer);
+}
+
 bool init_wave_simulation(int _width, int _height){
 
       width = _width;
       height = _height;
 
-      /***** Initialisation de la map de r pour la première onde *****/
       dataWaveSim.vect_of_r = vect_init(sizeof(Wave_data));
+      dataWaveSim.u_buffer = NULL;
+      dataWaveSim.r_map_all = NULL;
+      dataWaveSim.inv_r_map = NULL;
 
-      dataWaveSim.r_map_all = malloc(width * 2 * height * 2 * sizeof(float));
-      dataWaveSim.inv_r_map = malloc(width * 2 * height * 2 * sizeof(float));
-      for(unsigned int x=0; x<width*2; x++){
-            for(unsigned y=0; y<height*2; y++){
-                  float dx = ((float)x - width)/50.0f;
-                  float dy = ((float)y - height)/50.0f;
-                  dataWaveSim.r_map_all[y*width*2 + x] = sqrtf(dx*dx + dy*dy);
-                  if(dataWaveSim.r_map_all[y*width*2 + x] < 0.9f)
-                        dataWaveSim.inv_r_map[y*width*2 + x] = 1;
-                  else
-                        dataWaveSim.inv_r_map[y*width*2 + x] = 1/dataWaveSim.r_map_all[y*width*2 + x];
-            }
-      }
-
-      for(unsigned int i=0; i<U_R0_RESOLUTION; i++){
-            dataWaveSim.u_r0_table[i] = u_r0(R_MAX_PAS*i);
-      }
-
-
-      /***** Initialisation du buffer  *****/
-      dataWaveSim.u_buffer = malloc(width * height * sizeof(float));
-      assert(dataWaveSim.u_buffer);
+      init_data_wave_sim(&dataWaveSim);
 
       SIMD_C = _mm256_set1_ps(C);
       SIMD_abs_mask = _mm256_set1_ps(-0.0f);
@@ -74,6 +82,31 @@ bool init_wave_simulation(int _width, int _height){
       SIMD_0_5 = _mm256_set1_ps(0.5f);
 
       return true;
+}
+
+bool resize_wave_simulation(int new_width, int new_height){
+      if(new_width <= 0 || new_height <= 0){
+            return false;
+      }
+
+      width = new_width;
+      height = new_height;
+
+      free(dataWaveSim.r_map_all);
+      free(dataWaveSim.inv_r_map);
+      free(dataWaveSim.u_buffer);
+
+      init_data_wave_sim(&dataWaveSim);
+
+      return true;
+}
+
+bool resize_wave_simulation_width(int new_width){
+      return resize_wave_simulation(new_width, height);
+}
+
+bool resize_wave_simulation_height(int new_height){
+      return resize_wave_simulation(width, new_height);
 }
 
 void end_simulation(){
