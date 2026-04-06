@@ -36,11 +36,16 @@ set_target_properties(Moteur3D PROPERTIES
     INTERFACE_INCLUDE_DIRECTORIES ${MOTEUR3D_INCLUDE_DIR}
 )
 
+set(MENU_SOURCE ${CMAKE_CURRENT_SOURCE_DIR}/src/menu/menu.c)
+set(MENU_HEADER ${CMAKE_CURRENT_SOURCE_DIR}/include/menu.h)
+
 # ================= Executable: 2D / Bench =================
 add_executable(WAVE_SIM_2D
     ${CMAKE_CURRENT_SOURCE_DIR}/src/app/simu2D.c
     ${CMAKE_CURRENT_SOURCE_DIR}/src/simulation/waveSim.c
     ${CMAKE_CURRENT_SOURCE_DIR}/src/render/sdl2d/SDLWaveSim.c
+    ${MENU_SOURCE}
+    ${MENU_HEADER}
 )
 
 target_include_directories(WAVE_SIM_2D PRIVATE
@@ -53,6 +58,8 @@ target_link_libraries(WAVE_SIM_2D PRIVATE SDL3::SDL3 Vector)
 add_executable(WAVE_SIM_3D
     ${CMAKE_CURRENT_SOURCE_DIR}/src/app/simu3D.c
     ${CMAKE_CURRENT_SOURCE_DIR}/src/simulation/waveSim.c
+    ${MENU_SOURCE}
+    ${MENU_HEADER}
 )
 
 target_include_directories(WAVE_SIM_3D PRIVATE

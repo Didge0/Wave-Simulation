@@ -97,12 +97,6 @@ typedef struct {
     int move_up;
     int move_down;
 
-    /* Rotations clavier */
-    int rot_left;
-    int rot_right;
-    int rot_up;
-    int rot_down;
-
     /* Delta souris accumule pendant la frame */
     float mouse_dx;
     float mouse_dy;
@@ -159,6 +153,12 @@ bool M3D_init_default(M3D_Engine* engine, int width, int height, int fullscreen)
 /* Initialise l'engine avec valeurs camera personnalisees. */
 bool M3D_init_custom(M3D_Engine* engine, const Moteur3D_InitData* initData, const char* window_title, int fullscreen);
 
+/* Change le mode plein ecran de l'engine. */
+void M3D_set_Fullscreen(M3D_Engine* engine, int fullscreen);
+
+/* Resynchronise la taille de rendu avec la taille actuelle de la fenetre. */
+bool M3D_sync_window_size(M3D_Engine* engine);
+
 /* Libere tout le contexte engine (camera + SDL + buffer). */
 void M3D_shutdown(M3D_Engine* engine);
 
@@ -193,11 +193,11 @@ size_t M3D_draw_lines(M3D_Engine* engine, const M3D_Line3D* lines, size_t count,
 /* Dessine un lot de lignes 3D avec une épaisseur et retourne le nombre dessine. */
 size_t M3D_draw_thick_lines(M3D_Engine* engine, const M3D_Line3D* lines, size_t count, uint32_t color, int thickness);
 
-/* Dessine un triangle 3D rempli. */
-bool M3D_draw_triangle(M3D_Engine* engine, const Vect3* a, const Vect3* b, const Vect3* c, uint32_t color);
+/* Dessine un triangle 3D rempli, avec ou sans rejet des faces arriere. */
+bool M3D_draw_triangle(M3D_Engine* engine, const Vect3* a, const Vect3* b, const Vect3* c, uint32_t color, bool backface_culling_enabled);
 
-/* Dessine un lot de triangles 3D remplis et retourne le nombre dessine. */
-size_t M3D_draw_triangles(M3D_Engine* engine, const M3D_Triangle3D* triangles, size_t count, uint32_t color);
+/* Dessine un lot de triangles 3D remplis avec le meme mode de rejet, et retourne le nombre dessine. */
+size_t M3D_draw_triangles(M3D_Engine* engine, const M3D_Triangle3D* triangles, size_t count, uint32_t color, bool backface_culling_enabled);
 
 //MARK: Camera Utility API
 
@@ -219,10 +219,13 @@ void M3D_set_mode(Moteur3D* moteur, CameraMode mode);
 //MARK: Input Binding API
 
 /* Bindings clavier/souris par defaut. */
-void M3D_bind_default_key_down(Moteur3D* moteur, M3D_InputState* input, int keycode, int is_repeat, int* should_quit);
+bool M3D_bind_default_key_down_fullscreen(M3D_Engine* engine, M3D_InputState* input, int keycode, int is_repeat);
+bool M3D_bind_default_key_down_show_mouse(M3D_Engine* engine, M3D_InputState* input, int keycode, int is_repeat);
+bool M3D_bind_default_key_down_quit(M3D_Engine* engine, M3D_InputState* input, int keycode, int is_repeat);
+void M3D_bind_default_key_down_camera(M3D_Engine* engine, M3D_InputState* input, int keycode, int is_repeat);
 void M3D_bind_default_key_up(M3D_InputState* input, int keycode);
 void M3D_bind_default_mouse_motion(M3D_InputState* input, float dx, float dy);
-void M3D_bind_default_mouse_wheel(Moteur3D* moteur, float wheel_y);
+void M3D_bind_default_mouse_wheel(M3D_Engine* engine, float wheel_y);
 
 //MARK: Input Apply API
 

@@ -10,22 +10,56 @@
 
 #include "waveSim.h"
 #include "Moteur3D/Moteur3D.h"
+#include "menu.h"
 
-#define DRAWING_MODE 0   //0:Point, 1:Mesh, 2:Triangles
-#define FULL_SCREEN true
-#define OPTI_SELECTED 1       //0:Scalaire, 1:SIMD
-#define LIFE_TIME 4.0f
-#define RESOLUTION_WIDTH  3u
-#define RESOLUTION_HEIGHT 3u
 #define WIDTH 600
 #define HEIGHT 600
-#define FREQUENCY 24
+#define WINDOWED_WIDTH 900
+#define WINDOWED_HEIGHT 600
 
-#define DEBUG_TEXT_SCALE 1.0f
+#define DEBUG_TEXT_SCALE 2.0f
 #define WAVE_WORLD_SCALE_X 0.03f
 #define WAVE_WORLD_SCALE_Y 0.03f
 #define WAVE_HEIGHT_SCALE  6.0f
-#define WAVE_RENDER_STEP   5
+#define WAVE_COLOR_GAIN    4.0f
+
+#define SIMULATION_SPEED_MIN 0.25f
+#define SIMULATION_SPEED_MAX 8.0f
+
+typedef enum{
+      DRAW_MODE_POINT = 0,
+      DRAW_MODE_MESH = 1,
+      DRAW_MODE_TRIANGLES = 2
+} Draw_Mode;
+
+const char* drawing_mode_label_fn(int value, void* user_data){
+      switch(value){
+            case DRAW_MODE_POINT:
+                  return "POINT";
+            case DRAW_MODE_MESH:
+                  return "MESH";
+            case DRAW_MODE_TRIANGLES:
+                  return "TRIANGLES";
+            default:
+                  return "UNKNOWN";
+      }
+}
+
+typedef enum{
+      OPTI_SCALAIRE = 0,
+      OPTI_SIMD = 1
+} Optimization_Mode;
+
+const char* optimization_label_fn(int value, void* user_data){
+      switch(value){
+            case OPTI_SCALAIRE:
+                  return "SCALAIRE";
+            case OPTI_SIMD:
+                  return "SIMD";
+            default:
+                  return "UNKNOWN";
+      }
+}
 
 static int width;
 static int height;
@@ -38,6 +72,42 @@ static float clamp_percentage(float value){
             return 100.0f;
       }
       return value;
+}
+
+static float clamp_simulation_speed(float value){
+      if(value < SIMULATION_SPEED_MIN){
+            return SIMULATION_SPEED_MIN;
+      }
+      if(value > SIMULATION_SPEED_MAX){
+            return SIMULATION_SPEED_MAX;
+      }
+      return value;
+}
+
+static void on_menu_fullscreen_change(Menu_Item* item, void* user_data){
+      if(item == NULL || item->value_ptr == NULL || user_data == NULL){
+            return;
+      }
+
+      M3D_set_Fullscreen((M3D_Engine*)user_data, (*(bool*)item->value_ptr) ? 1 : 0);
+}
+
+static void update_overlay_rect(SDL_Window* window, SDL_FRect* rect, int* window_pixel_width){
+      int current_width = WIDTH;
+      int current_height = HEIGHT;
+
+      if(window != NULL){
+            SDL_GetWindowSizeInPixels(window, &current_width, &current_height);
+      }
+
+      rect->x = 0.0f;
+      rect->y = 0.0f;
+      rect->w = (float)current_width;
+      rect->h = 40.0f;
+
+      if(window_pixel_width != NULL){
+            *window_pixel_width = current_width;
+      }
 }
 
 static void rand_wave(float t, unsigned int frequency, unsigned int nb_par_second){
@@ -60,23 +130,41 @@ static Vect3 wave_point_to_world(int sample_x, int sample_y, float amplitude){
 }
 
 static uint32_t wave_color(float amplitude){
+      const uint32_t neutral = 90u;
+      float intensity_scale;
+      uint32_t intensity;
+      uint32_t red;
+      uint32_t green;
+      uint32_t blue;
+
       if(amplitude > 1.0f){
             amplitude = 1.0f;
       }else if(amplitude < -1.0f){
             amplitude = -1.0f;
       }
 
-      if(amplitude == 0.0f){
-            return 0x000000FF;
+      intensity_scale = fabsf(amplitude) * WAVE_COLOR_GAIN;
+      if(intensity_scale > 1.0f){
+            intensity_scale = 1.0f;
       }
 
-      uint32_t intensity = (uint32_t)(fabsf(amplitude) * 255.0f);
+      intensity = (uint32_t)(intensity_scale * 255.0f);
 
       if(amplitude > 0.0f){
-            return (intensity << 24) | 0x000000FF;
+            red = neutral + ((255u - neutral) * intensity) / 255u;
+            green = (neutral * (255u - intensity)) / 255u;
+            blue = (neutral * (255u - intensity)) / 255u;
+      }else if(amplitude < 0.0f){
+            red = (neutral * (255u - intensity)) / 255u;
+            green = (neutral * (255u - intensity)) / 255u;
+            blue = neutral + ((255u - neutral) * intensity) / 255u;
+      }else{
+            red = neutral;
+            green = neutral;
+            blue = neutral;
       }
 
-      return (intensity << 8) | 0x000000FF;
+      return (red << 24) | (green << 16) | (blue << 8) | 0x000000FF;
 }
 
 static void draw_wave_triangles(M3D_Engine* engine, const float* buffer, int step){
@@ -86,17 +174,17 @@ static void draw_wave_triangles(M3D_Engine* engine, const float* buffer, int ste
                   int idx_right = y * width + (x + step);
                   int idx_down = (y + step) * width + x;
                   int idx_diag = (y + step) * width + (x + step);
+                  uint32_t cell_color;
 
                   Vect3 p00 = wave_point_to_world(x, y, buffer[idx]);
                   Vect3 p10 = wave_point_to_world(x + step, y, buffer[idx_right]);
                   Vect3 p01 = wave_point_to_world(x, y + step, buffer[idx_down]);
                   Vect3 p11 = wave_point_to_world(x + step, y + step, buffer[idx_diag]);
 
-                  float amp_t1 = (buffer[idx] + buffer[idx_right] + buffer[idx_diag]) / 3.0f;
-                  float amp_t2 = (buffer[idx] + buffer[idx_diag] + buffer[idx_down]) / 3.0f;
+                  cell_color = wave_color((buffer[idx] + buffer[idx_right] + buffer[idx_down] + buffer[idx_diag]) * 0.25f);
 
-                  M3D_draw_triangle(engine, &p00, &p10, &p11, wave_color(amp_t1));
-                  M3D_draw_triangle(engine, &p00, &p11, &p01, wave_color(amp_t2));
+                  M3D_draw_triangle(engine, &p00, &p10, &p11, cell_color, false);
+                  M3D_draw_triangle(engine, &p00, &p11, &p01, cell_color, false);
             }
       }
 }
@@ -135,16 +223,17 @@ static void draw_wave_point(M3D_Engine* engine, const float* buffer, int step){
 int main(){
       M3D_Engine engine;
       Moteur3D_InitData initData;
-      float t = 0.0f;
-      float dt = 1.0f / (float)FREQUENCY;
+      float simulation_time = 0.0f;
+      float base_dt = 1.0f / 24.0f;
+      
       unsigned int nb_par_second = 1;
       Uint64 perf_frequency = SDL_GetPerformanceFrequency();
 
       srand((unsigned)time(NULL));
-      M3D_fill_default_init_data(&initData, WIDTH, HEIGHT);
+      M3D_fill_default_init_data(&initData, WINDOWED_WIDTH, WINDOWED_HEIGHT);
 
       bool is_opened = true;
-      if(!M3D_init_custom(&engine, &initData, "Moving Masse", FULL_SCREEN)){
+      if(!M3D_init_custom(&engine, &initData, "Moving Masse", 1)){
             return false;
       }
       width = WIDTH;
@@ -153,18 +242,19 @@ int main(){
             M3D_shutdown(&engine);
             return false;
       }
-      add_wave((float)(width / 2), (float)(height / 2), t);
+      add_wave((float)(width / 2), (float)(height / 2), simulation_time);
 
       M3D_InputState input = {0};
-      int drawing_mode = DRAWING_MODE;
+      
       Uint64 prev_ticks = SDL_GetTicks();
       float smoothed_hz = 0.0f;
       float smoothed_simulation_pct = 0.0f;
       float smoothed_render_pct = 0.0f;
+      int window_pixel_width = WIDTH;
 
       char data[1024];
       char hz_text[64];
-      SDL_FRect dataRect = (SDL_FRect){0,0,(float)WIDTH,40};
+      SDL_FRect dataRect = {0};
 
       Uint64 simulation_start;
       Uint64 simulation_end;
@@ -174,7 +264,31 @@ int main(){
       SDL_Event event;
       float* buffer;
       float delta_seconds;
+      
+      
+
+      /**** Menu data ****/
+      bool show_menu = false;
+      bool is_fullscreen = 1;
       bool pause = false;
+      float simulation_speed = 1.0f;
+      Draw_Mode drawing_mode = DRAW_MODE_POINT;
+      unsigned int resolution_simulation = 3u;
+      Optimization_Mode optimization_selected = OPTI_SIMD;
+      float limit_time_wave_simulation = 4.0f;
+      unsigned int resolution_daffichage = 5u;
+
+      Menu_Params params;
+      menu_init(&params);
+      menu_add_bool(&params, "Fullscreen", &is_fullscreen, on_menu_fullscreen_change, &engine);
+      menu_add_float(&params, "Sim Speed", &simulation_speed, SIMULATION_SPEED_MIN, SIMULATION_SPEED_MAX, 0.25f, NULL, NULL);
+      menu_add_int(&params, "Drawing Res", (int*)&resolution_daffichage, 1, 20, 1, NULL, NULL);
+      menu_add_float(&params, "Limit Time", &limit_time_wave_simulation, 0.1f, 100.0f, 1.0f, NULL, NULL);
+      menu_add_int(&params, "Simulation Res", (int*)&resolution_simulation, 1, 20, 1, NULL, NULL);
+      menu_add_enum(&params, "Optimization", (int*)&optimization_selected, 0, 1, 1, optimization_label_fn, NULL, NULL);
+      menu_add_enum(&params, "Drawing Mode", (int*)&drawing_mode, 0, 2, 1, drawing_mode_label_fn, NULL, NULL);
+
+      update_overlay_rect(engine.window, &dataRect, &window_pixel_width);
 
       while(is_opened){
             now_ticks = SDL_GetTicks();
@@ -200,60 +314,74 @@ int main(){
             while(SDL_PollEvent(&event)){
                   if (event.type == SDL_EVENT_QUIT) {
                         is_opened = false;
+                  }else if(event.type == SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED || event.type == SDL_EVENT_WINDOW_RESIZED){
+                        update_overlay_rect(engine.window, &dataRect, &window_pixel_width);
                   }else if( event.type == SDL_EVENT_KEY_DOWN){
                         if(event.key.key == SDLK_P && !event.key.repeat){
                               drawing_mode = (drawing_mode + 1) % 3;
                         }else if(event.key.key == SDLK_SPACE && !event.key.repeat){
                               pause = !pause;
+                        }else if(event.key.key == SDLK_KP_ENTER && !event.key.repeat){
+                              show_menu = !show_menu;
+                        }
+                        if(show_menu){
+                              menu_bind_default_key_down(&params, (int)event.key.key, event.key.repeat ? 1 : 0);
                         }
 
-                        int should_quit = 0;
-                        M3D_bind_default_key_down(&engine.camera, &input, (int)event.key.key, event.key.repeat ? 1 : 0, &should_quit);
-                        if(should_quit){
+                        M3D_bind_default_key_down_camera(&engine, &input, (int)event.key.key, event.key.repeat ? 1 : 0);
+                        if(M3D_bind_default_key_down_fullscreen(&engine, &input, (int)event.key.key, event.key.repeat ? 1 : 0)){
+                              is_fullscreen = !is_fullscreen;
+                        }
+                        M3D_bind_default_key_down_show_mouse(&engine, &input, (int)event.key.key, event.key.repeat ? 1 : 0);
+                        if(M3D_bind_default_key_down_quit(&engine, &input, (int)event.key.key, event.key.repeat ? 1 : 0)){
                               is_opened = false;
                         }
+                        
                   }else if(event.type == SDL_EVENT_KEY_UP){
                         M3D_bind_default_key_up(&input, (int)event.key.key);
                   }else if(event.type == SDL_EVENT_MOUSE_MOTION){
                         M3D_bind_default_mouse_motion(&input, (float)event.motion.xrel, (float)event.motion.yrel);
                   }else if(event.type == SDL_EVENT_MOUSE_WHEEL){
-                        M3D_bind_default_mouse_wheel(&engine.camera, event.wheel.y * 10.0f);
+                        M3D_bind_default_mouse_wheel(&engine, event.wheel.y * 10.0f);
                   }
             }
             M3D_apply_input_state(&engine.camera, &input, delta_seconds);
 
             simulation_start = SDL_GetPerformanceCounter();
             if(!pause){
-#if OPTI_SELECTED == 1
-                  buffer = calculate_buffer_SIMD(t, RESOLUTION_HEIGHT, RESOLUTION_WIDTH);
-#else
-                  buffer = calculate_buffer(t, RESOLUTION_HEIGHT, RESOLUTION_WIDTH);
-#endif
-            
-                  update_vector(t, LIFE_TIME);
-                  rand_wave(t, FREQUENCY, nb_par_second);
-                  t += dt;
+                  float simulation_dt = base_dt * simulation_speed;
+
+                  if(optimization_selected == OPTI_SIMD){
+                        buffer = calculate_buffer_SIMD(simulation_time, resolution_simulation, resolution_simulation);
+                  }else{
+                        buffer = calculate_buffer(simulation_time, resolution_simulation, resolution_simulation);
+                  }
+                  update_vector(simulation_time, limit_time_wave_simulation);
+                  rand_wave(simulation_time, 24.0f, nb_par_second);
+                  simulation_time += simulation_dt;
             }
             simulation_end = SDL_GetPerformanceCounter();
 
             render_start = SDL_GetPerformanceCounter();
             M3D_clear_frame(&engine, 0xFFFFFFFF);
-            if(drawing_mode == 0){
-                  draw_wave_point(&engine, buffer, WAVE_RENDER_STEP);
-            }else if(drawing_mode == 1){
-                  draw_wave_mesh(&engine, buffer, WAVE_RENDER_STEP);
+            if(drawing_mode == DRAW_MODE_POINT){
+                  draw_wave_point(&engine, buffer, resolution_daffichage);
+            }else if(drawing_mode == DRAW_MODE_MESH){
+                  draw_wave_mesh(&engine, buffer, resolution_daffichage);
             }else{
-                  draw_wave_triangles(&engine, buffer, WAVE_RENDER_STEP);
+                  draw_wave_triangles(&engine, buffer, resolution_daffichage);
             }
             
 
             snprintf(
                   data,
                   sizeof(data),
-                  "mode=%s Rot=%s t=%.2fs waves=%zu cam=(%.2f,%.2f,%.2f) sim=%.0f%% render=%.0f%%",
+                  "mode=%s Rot=%s win=%s speed=x%.2f t=%.2fs waves=%zu cam=(%.2f,%.2f,%.2f) sim=%.0f%% render=%.0f%%",
                   engine.camera.mode == CAM_MODE_ORBIT ? "ORBIT" : "FPS",
-                  drawing_mode == 0 ? "POINT" : drawing_mode == 1 ? "MESH" : "TRIANGLES",
-                  t,
+                  drawing_mode == DRAW_MODE_POINT ? "POINT" : drawing_mode == DRAW_MODE_MESH ? "MESH" : "TRIANGLES",
+                  is_fullscreen ? "FULL" : "900x600",
+                  simulation_speed,
+                  simulation_time,
                   getNbWave(),
                   engine.camera.pos.x,
                   engine.camera.pos.y,
@@ -273,7 +401,7 @@ int main(){
 
             snprintf(hz_text, sizeof(hz_text), "Hz: %.1f", smoothed_hz);
             {
-                  int logical_width = (int)((float)engine.camera.width / DEBUG_TEXT_SCALE);
+                  int logical_width = (int)((float)window_pixel_width / DEBUG_TEXT_SCALE);
                   int text_x = logical_width - 5 - (int)strlen(hz_text) * 8;
                   if(text_x < 5){
                         text_x = 5;
@@ -282,8 +410,14 @@ int main(){
             }
 
             SDL_SetRenderScale(engine.renderer, 1.0f, 1.0f);
+            if(show_menu){
+                  menu_show(engine.window, &params);
+            }
             M3D_present_frame(&engine);
             render_end = SDL_GetPerformanceCounter();
+
+            
+
 
             if(perf_frequency != 0){
                   double simulation_seconds = (double)(simulation_end - simulation_start) / (double)perf_frequency;
@@ -305,6 +439,7 @@ int main(){
             }
       }
 
+      menu_free(&params);
       end_simulation();
       M3D_shutdown(&engine);
 
