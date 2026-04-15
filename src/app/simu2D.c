@@ -116,7 +116,6 @@ int main(void) {
             if (rand() % 16 == 0) {
                   add_wave(rand() % WIDTH, rand() % HEIGHT, t);
             }
-            update_vector(t, LIFE_TIME);
 
             LARGE_INTEGER a, b;
             QueryPerformanceCounter(&a);
@@ -126,6 +125,7 @@ int main(void) {
 #else
             calculate_buffer_SIMD(t, RESOLUTION_HEIGHT, RESOLUTION_WIDTH);
 #endif
+            update_vector(t);
             QueryPerformanceCounter(&b);
 
             double dt_sec = (double)(b.QuadPart - a.QuadPart) / fq.QuadPart;
@@ -234,7 +234,7 @@ int main(){
             draw_screen(t);
             dt = 1/get_real_frequency();
             t+=dt;
-            update_vector(t,LIFE_TIME);
+            update_vector(t);
             if(nb_par_second > 0)
                   rand_wave(t, frequency, nb_par_second);
             

@@ -23,7 +23,7 @@
 #define WAVE_HEIGHT_SCALE  6.0f
 #define WAVE_COLOR_GAIN    4.0f
 
-#define SIMULATION_SPEED_MIN 0.25f
+#define SIMULATION_SPEED_MIN 0.1f
 #define SIMULATION_SPEED_MAX 8.0f
 
 typedef enum{
@@ -142,14 +142,24 @@ static void update_overlay_rect(SDL_Window* window, SDL_FRect* rect, int* window
       }
 }
 
-static void rand_wave(float t, unsigned int frequency, unsigned int nb_par_second){
-      if(nb_par_second == 0){
+static void rand_wave(float current_time, float simulation_delta_seconds, unsigned int waves_per_second){
+      if(waves_per_second == 0 || simulation_delta_seconds <= 0.0f){
             return;
       }
-      if(rand() % (frequency / nb_par_second) == 0){
+
+      float expected_wave_count = simulation_delta_seconds * (float)waves_per_second;
+      unsigned int generated_wave_count = (unsigned int)expected_wave_count;
+      float fractional_wave = expected_wave_count - (float)generated_wave_count;
+
+      if(((float)rand() / ((float)RAND_MAX + 1.0f)) < fractional_wave){
+            generated_wave_count++;
+      }
+
+      for(unsigned int wave_index = 0; wave_index < generated_wave_count; ++wave_index){
             int x = rand() % width;
             int y = rand() % height;
-            add_wave((float)x, (float)y, t);
+            float spawn_offset = ((float)rand() / ((float)RAND_MAX + 1.0f)) * simulation_delta_seconds;
+            add_wave((float)x, (float)y, current_time - spawn_offset);
       }
 }
 
@@ -256,9 +266,8 @@ int main(){
       M3D_Engine engine;
       Moteur3D_InitData initData;
       float simulation_time = 0.0f;
-      float base_dt = 1.0f / 24.0f;
       
-      unsigned int nb_par_second = 1;
+      
       Uint64 perf_frequency = SDL_GetPerformanceFrequency();
 
       srand((unsigned)time(NULL));
@@ -278,7 +287,7 @@ int main(){
 
       M3D_InputState input = {0};
       
-      Uint64 prev_ticks = SDL_GetTicks();
+      Uint64 previous_counter = SDL_GetPerformanceCounter();
       float smoothed_hz = 0.0f;
       float smoothed_simulation_pct = 0.0f;
       float smoothed_render_pct = 0.0f;
@@ -292,10 +301,11 @@ int main(){
       Uint64 simulation_end;
       Uint64 render_start;
       Uint64 render_end;
-      Uint64 now_ticks;
+      Uint64 current_counter;
       SDL_Event event;
       float* buffer;
       float delta_seconds;
+      float input_delta_seconds;
       
       
 
@@ -307,11 +317,11 @@ int main(){
       Draw_Mode drawing_mode = DRAW_MODE_POINT;
       unsigned int resolution_simulation = 3u;
       Optimization_Mode optimization_selected = OPTI_SIMD;
-      float limit_time_wave_simulation = 4.0f;
       unsigned int resolution_daffichage = 5u;
       unsigned int wave_simulation_width = WIDTH;
       unsigned int wave_simulation_height = HEIGHT;
       bool pending_simulation_resize = false;
+      unsigned int nb_par_second = 1;
 
       Menu_Params params;
       menu_init(&params);
@@ -319,25 +329,33 @@ int main(){
       menu_add_bool(&params, "Pause", &pause, NULL, NULL);
       menu_add_uint(&params, "Sim width", &wave_simulation_width, 1, 10000, 10, NULL, NULL);
       menu_add_uint(&params, "Sim height", &wave_simulation_height, 1, 10000, 10, NULL, NULL);
-      menu_add_float(&params, "Sim Speed", &simulation_speed, SIMULATION_SPEED_MIN, SIMULATION_SPEED_MAX, 0.25f, NULL, NULL);
-      menu_add_float(&params, "Limit Time", &limit_time_wave_simulation, 1.0f, 100.0f, 1.0f, NULL, NULL);
+      menu_add_float(&params, "Sim Speed", &simulation_speed, SIMULATION_SPEED_MIN, SIMULATION_SPEED_MAX, 0.1f, NULL, NULL);
+      menu_add_uint(&params, "Waves/s", &nb_par_second, 0, 20, 1, NULL, NULL);
       menu_add_int(&params, "Drawing Res", (int*)&resolution_daffichage, 1, 20, 1, NULL, NULL);
       menu_add_int(&params, "Simulation Res", (int*)&resolution_simulation, 1, 20, 1, NULL, NULL);
       menu_add_enum(&params, "Optimization", (int*)&optimization_selected, 0, 1, 1, optimization_label_fn, NULL, NULL);
       menu_add_enum(&params, "Drawing Mode", (int*)&drawing_mode, 0, 2, 1, drawing_mode_label_fn, NULL, NULL);
 
+      buffer = calculate_buffer(simulation_time, resolution_simulation, resolution_simulation);
+
       update_overlay_rect(engine.window, &dataRect, &window_pixel_width);
 
       while(is_opened){
-            now_ticks = SDL_GetTicks();
-            delta_seconds = (float)(now_ticks - prev_ticks) / 1000.0f;
-            
-            prev_ticks = now_ticks;
+            current_counter = SDL_GetPerformanceCounter();
+            if(perf_frequency != 0){
+                  delta_seconds = (float)(current_counter - previous_counter) / (float)perf_frequency;
+            }else{
+                  delta_seconds = 0.0f;
+            }
+
+            previous_counter = current_counter;
             if(delta_seconds < 0.0f){
                   delta_seconds = 0.0f;
             }
-            if(delta_seconds > 0.100f){
-                  delta_seconds = 0.100f;
+
+            input_delta_seconds = delta_seconds;
+            if(input_delta_seconds > 0.100f){
+                  input_delta_seconds = 0.100f;
             }
 
             if(delta_seconds > 0.00001f){
@@ -401,20 +419,21 @@ int main(){
                         M3D_bind_default_mouse_wheel(&engine, event.wheel.y * 10.0f);
                   }
             }
-            M3D_apply_input_state(&engine.camera, &input, delta_seconds);
+            M3D_apply_input_state(&engine.camera, &input, input_delta_seconds);
 
             simulation_start = SDL_GetPerformanceCounter();
             if(!pause){
-                  float simulation_dt = base_dt * simulation_speed;
+                  float simulation_dt = delta_seconds * simulation_speed;
+
+                  simulation_time += simulation_dt;
+                  rand_wave(simulation_time, simulation_dt, nb_par_second);
 
                   if(optimization_selected == OPTI_SIMD){
                         buffer = calculate_buffer_SIMD(simulation_time, resolution_simulation, resolution_simulation);
                   }else{
                         buffer = calculate_buffer(simulation_time, resolution_simulation, resolution_simulation);
                   }
-                  update_vector(simulation_time, limit_time_wave_simulation);
-                  rand_wave(simulation_time, 24.0f, nb_par_second);
-                  simulation_time += simulation_dt;
+                  update_vector(simulation_time);
             }
             simulation_end = SDL_GetPerformanceCounter();
 

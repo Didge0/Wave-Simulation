@@ -10,6 +10,7 @@
 #define R_MAX 2.5f
 #define R_MAX_PAS (R_MAX / (float)U_R0_RESOLUTION)
 #define INV_R_MAX_PAS ( (float)U_R0_RESOLUTION / (float)R_MAX)
+#define WAVE_IMPACT_THRESHOLD 1e-6f
 
 typedef struct{
       Vector vect_of_r;
@@ -117,8 +118,15 @@ void end_simulation(){
 }
 
 void add_wave(float x_click, float y_click, float t){
-      Wave_data data = {t, (int)x_click, (int)y_click};
+      Wave_data data = {t, (int)x_click, (int)y_click, 0.0f};
       vect_push_back(&dataWaveSim.vect_of_r, &data, sizeof(Wave_data));   
+}
+
+static void reset_wave_impacts(void){
+      for(unsigned int idx = 0; idx < dataWaveSim.vect_of_r.len; idx++){
+            Wave_data* data = vect_get(&dataWaveSim.vect_of_r, idx);
+            data->max_impact = 0.0f;
+      }
 }
 
 static float u_fct_gene(float r, float t, float inv_r){
@@ -212,6 +220,7 @@ float* calculate_buffer(float t, const unsigned int res_h, const unsigned int re
       float inv_r;
       int x,y;
  
+      reset_wave_impacts();
       for (y = 0; y < height; y += res_h) {
             for (x = 0; x < width; x += res_w) {
                   u = 0.0f;
@@ -219,7 +228,12 @@ float* calculate_buffer(float t, const unsigned int res_h, const unsigned int re
                         Wave_data* data = vect_get(&dataWaveSim.vect_of_r, w);
                         r     = dataWaveSim.r_map_all[(height + y-data->y) * width * 2 + (width + x-data->x)];
                         inv_r = dataWaveSim.inv_r_map[(height + y-data->y) * width * 2 + (width + x-data->x)];
-                        u += u_fct_gene_map(r, t - data->start_t, inv_r);
+                        float contribution = u_fct_gene_map(r, t - data->start_t, inv_r);
+                        u += contribution;
+                        float abs_contribution = fabsf(contribution);
+                        if(abs_contribution > data->max_impact){
+                              data->max_impact = abs_contribution;
+                        }
                   }
 
                   dataWaveSim.u_buffer[y * width + x] = u;
@@ -232,6 +246,7 @@ float* calculate_buffer(float t, const unsigned int res_h, const unsigned int re
 }
 
 float* calculate_buffer_SIMD(float t, const unsigned int res_h, const unsigned int res_w){ 
+      reset_wave_impacts();
       int x,y;
       float r,inv_r,u;
       __m256 SIMD_u;
@@ -253,7 +268,17 @@ float* calculate_buffer_SIMD(float t, const unsigned int res_h, const unsigned i
                         SIMD_r = _mm256_i32gather_ps(dataWaveSim.r_map_all, idx_map, 4);
                         SIMD_inv_r = _mm256_i32gather_ps(dataWaveSim.inv_r_map, idx_map, 4);
                         SIMD_t_start = _mm256_set1_ps(data->start_t);
-                        SIMD_u = _mm256_add_ps(SIMD_u, u_fct_gene_map_SIMD(SIMD_r, _mm256_sub_ps(SIMD_t, SIMD_t_start), SIMD_inv_r));
+                        __m256 SIMD_contribution = u_fct_gene_map_SIMD(SIMD_r, _mm256_sub_ps(SIMD_t, SIMD_t_start), SIMD_inv_r);
+                        SIMD_u = _mm256_add_ps(SIMD_u, SIMD_contribution);
+
+                        __m256 abs_contribution = _mm256_andnot_ps(SIMD_abs_mask, SIMD_contribution);
+                        float lane_max[8];
+                        _mm256_storeu_ps(lane_max, abs_contribution);
+                        for (int lane = 0; lane < 8; lane++) {
+                              if (lane_max[lane] > data->max_impact) {
+                                    data->max_impact = lane_max[lane];
+                              }
+                        }
                   }
 
                   if(res_w == 1){
@@ -273,7 +298,12 @@ float* calculate_buffer_SIMD(float t, const unsigned int res_h, const unsigned i
                         Wave_data* data = vect_get(&dataWaveSim.vect_of_r, w);
                         r     = dataWaveSim.r_map_all[(height + y-data->y) * width * 2 + (width + x-data->x)];
                         inv_r = dataWaveSim.inv_r_map[(height + y-data->y) * width * 2 + (width + x-data->x)];
-                        u += u_fct_gene_map(r, t - data->start_t, inv_r);
+                        float contribution = u_fct_gene_map(r, t - data->start_t, inv_r);
+                        u += contribution;
+                        float abs_contribution = fabsf(contribution);
+                        if(abs_contribution > data->max_impact){
+                              data->max_impact = abs_contribution;
+                        }
                   }
                   dataWaveSim.u_buffer[y * width + x] = u;
             }
@@ -286,11 +316,11 @@ float* calculate_buffer_SIMD(float t, const unsigned int res_h, const unsigned i
 }
 
 
-void update_vector(float t, const float life_time){
+void update_vector(float t){
       Wave_data* data;
       for(unsigned int idx=0; idx<dataWaveSim.vect_of_r.len;){
             data = vect_get(&dataWaveSim.vect_of_r, idx);
-            if(t-data->start_t > life_time){
+            if(data->max_impact < WAVE_IMPACT_THRESHOLD){
                   vect_pop_idx(&dataWaveSim.vect_of_r, idx);
             }else{
                   idx++;

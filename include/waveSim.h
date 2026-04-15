@@ -5,6 +5,7 @@
 typedef struct {
       float start_t;
       int x,y;
+      float max_impact;
 }Wave_data;
 
 bool init_wave_simulation(int _width, int _height);
@@ -21,6 +22,6 @@ float* calculate_buffer(float t, const unsigned int res_h, const unsigned int re
 
 float* calculate_buffer_SIMD(float t, const unsigned int res_h, const unsigned int res_w);
 
-void update_vector(float t, const float life_time);
+void update_vector(float t);
 
 size_t getNbWave();
