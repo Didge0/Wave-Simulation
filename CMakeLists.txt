@@ -4,6 +4,9 @@ project(Wave_SIM VERSION 1.0 LANGUAGES C)
 set(CMAKE_C_STANDARD 17)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 
+# ================= Output Directories =================
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
+
 # ================= SDL3 =================
 set(SDL3_DIR "C:/Library/SDL3")
 find_package(SDL3 REQUIRED CONFIG)
@@ -19,15 +22,15 @@ target_include_directories(Vector PUBLIC
 )
 
 # ================= Third Party: Moteur3D =================
-set(MOTEUR3D_INCLUDE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/third_party/moteur3d/include)
-set(MOTEUR3D_LIB_FILE ${CMAKE_CURRENT_SOURCE_DIR}/third_party/moteur3d/lib/Moteur.lib)
+set(MOTEUR3D_INCLUDE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/include/Moteur3D.h)
+set(MOTEUR3D_LIB_FILE ${CMAKE_CURRENT_SOURCE_DIR}/src/Lib/Moteur.lib)
 
 add_library(Matrice3D STATIC
-    ${CMAKE_CURRENT_SOURCE_DIR}/third_party/moteur3d/src/Matrice/Matrice.c
-    ${CMAKE_CURRENT_SOURCE_DIR}/third_party/moteur3d/src/Matrice/Matrice.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/common/matrice/Matrice.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/common/matrice/Matrice.h
 )
 target_include_directories(Matrice3D PUBLIC
-    ${CMAKE_CURRENT_SOURCE_DIR}/third_party/moteur3d/src/Matrice
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/common/matrice
 )
 
 add_library(Moteur3D STATIC IMPORTED GLOBAL)
@@ -39,7 +42,21 @@ set_target_properties(Moteur3D PROPERTIES
 set(MENU_SOURCE ${CMAKE_CURRENT_SOURCE_DIR}/src/menu/menu.c)
 set(MENU_HEADER ${CMAKE_CURRENT_SOURCE_DIR}/include/menu.h)
 
-# ================= Executable: 2D / Bench =================
+# ================= Executable: Bench =================
+add_executable(WAVE_SIM_BENCH
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/app/benchmark_Simu.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/simulation/waveSim.c
+)
+
+target_include_directories(WAVE_SIM_BENCH PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
+target_link_libraries(WAVE_SIM_BENCH PRIVATE Vector)
+
+
+
+# ================= Executable: 2D =================
 add_executable(WAVE_SIM_2D
     ${CMAKE_CURRENT_SOURCE_DIR}/src/app/simu2D.c
     ${CMAKE_CURRENT_SOURCE_DIR}/src/simulation/waveSim.c

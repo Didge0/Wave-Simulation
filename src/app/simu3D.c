@@ -9,7 +9,7 @@
 #include <crtdbg.h>
 
 #include "waveSim.h"
-#include "Moteur3D/Moteur3D.h"
+#include "Moteur3D.h"
 #include "menu.h"
 
 #define WIDTH 600

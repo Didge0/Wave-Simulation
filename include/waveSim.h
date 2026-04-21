@@ -1,12 +1,5 @@
-#include <stdint.h>
-#include "immintrin.h"
+#include <stddef.h>
 #include <stdbool.h>
-
-typedef struct {
-      float start_t;
-      int x,y;
-      float max_impact;
-}Wave_data;
 
 bool init_wave_simulation(int _width, int _height);
 

@@ -1,4 +1,5 @@
 #include <math.h>
+#include <immintrin.h>
 #include "waveSim.h"
 #include <stdlib.h>
 #include "vector.h"
@@ -12,18 +13,23 @@
 #define INV_R_MAX_PAS ( (float)U_R0_RESOLUTION / (float)R_MAX)
 #define WAVE_IMPACT_THRESHOLD 1e-6f
 
-typedef struct{
+typedef struct {
+      float start_t;
+      int x,y;
+      float max_impact;
+} Wave_data;
+
+typedef struct {
       Vector vect_of_r;
       float* u_buffer;
       float* r_map_all;
       float* inv_r_map;
       float u_r0_table[U_R0_RESOLUTION];
-}WaveSim;
+} WaveSim;
 
-WaveSim dataWaveSim;
-
-int width;
-int height;
+static WaveSim dataWaveSim;
+static int width;
+static int height;
 
 /*** CONSTANTE SIMD ***/
 __m256 SIMD_C;
@@ -127,10 +133,6 @@ static void reset_wave_impacts(void){
             Wave_data* data = vect_get(&dataWaveSim.vect_of_r, idx);
             data->max_impact = 0.0f;
       }
-}
-
-static float u_fct_gene(float r, float t, float inv_r){
-      return 0.5 * inv_r * ((r-C*t)*u_r0(fabsf(r-C*t)) + (r+C*t)*u_r0(r+C*t));
 }
 
 static float u_fct_gene_map(float r, float t, float inv_r){
